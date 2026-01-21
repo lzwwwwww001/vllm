@@ -1,0 +1,44 @@
+name: vLLM Build
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: dynamic-gpu-runner
+    steps:
+      # 1. 拉取代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. 配置 AWS 认证
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 3. 登录 Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. 构建并推送镜像
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: vllm                # 你的 ECR 仓库名字
+          IMAGE_TAG: ${{ github.sha }}        # 使用 Git Commit Hash 作为标签
+        run: |
+          # 构建镜像
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          # 推送到 ECR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # 同时更新一个 latest 标签方便测试
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # - name: Test with GPU
+      #   run: |
+      #     docker run --gpus all -v /models:/app/models vllm-test ...
